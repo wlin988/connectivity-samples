@@ -735,6 +735,8 @@ public class MainActivity extends ConnectionsActivity {
     appendToLogs(toColor(msg, getResources().getColor(R.color.log_warning)));
   }
 
+  //chan:w1
+
   @Override
   protected void logE(String msg, Throwable e) {
     super.logE(msg, e);
