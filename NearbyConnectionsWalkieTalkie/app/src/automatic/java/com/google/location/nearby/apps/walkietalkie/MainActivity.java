@@ -779,7 +779,7 @@ public class MainActivity extends ConnectionsActivity {
     @Override
     public void onAnimationRepeat(Animator animator) {}
   }
-
+// comments
   /** States that the UI goes through. */
   public enum State {
     UNKNOWN,
