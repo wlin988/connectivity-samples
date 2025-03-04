@@ -28,9 +28,9 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="top|end"
-        android:textSize="24sp"
         android:padding="10dp"
-        android:textColor="@color/textColor" />
+        android:textColor="@color/textColor"
+        android:textSize="24sp" />
 
     <TextView
         android:id="@+id/debug_log"
@@ -43,5 +43,11 @@
         android:scrollbars="vertical"
         android:textSize="20sp"
         android:textColor="@color/textColor" />
+
+    <Button
+        android:id="@+id/sharePhotoButton"
+        android:layout_width="188dp"
+        android:layout_height="105dp"
+        android:text="Share Photo" />
 
 </FrameLayout>

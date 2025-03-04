@@ -3,32 +3,58 @@ package com.google.location.nearby.apps.walkietalkie;
 import android.Manifest;
 import android.animation.Animator;
 import android.animation.ObjectAnimator;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Context;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.ParcelFileDescriptor;
 import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
 import androidx.annotation.WorkerThread;
+import androidx.collection.SimpleArrayMap;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.ViewCompat;
+
+import android.os.Parcelable;
 import android.text.SpannableString;
 import android.text.format.DateFormat;
 import android.text.method.ScrollingMovementMethod;
 import android.text.style.ForegroundColorSpan;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewAnimationUtils;
+import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import com.google.android.gms.nearby.Nearby;
 import com.google.android.gms.nearby.connection.ConnectionInfo;
 import com.google.android.gms.nearby.connection.Payload;
+import com.google.android.gms.nearby.connection.PayloadCallback;
+import com.google.android.gms.nearby.connection.PayloadTransferUpdate;
 import com.google.android.gms.nearby.connection.Strategy;
+
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FilenameFilter;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Random;
+import android.content.ContentUris;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
 
 /**
  * Our WalkieTalkie Activity. This Activity has 3 {@link State}s.
@@ -131,10 +157,13 @@ public class MainActivity extends ConnectionsActivity {
 
   /** The phone's original media volume. */
   private int mOriginalVolume;
+  private static Context context;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+    MainActivity.context = getApplicationContext();
+
     setContentView(R.layout.activity_main);
     getSupportActionBar()
         .setBackgroundDrawable(ContextCompat.getDrawable(this, R.drawable.actionBar));
@@ -149,6 +178,140 @@ public class MainActivity extends ConnectionsActivity {
     mName = generateRandomName();
 
     ((TextView) findViewById(R.id.name)).setText(mName);
+
+    Button btn = (Button) findViewById(R.id.sharePhotoButton);
+    btn.setOnClickListener(new View.OnClickListener() {
+      @Override
+      public void onClick(View v) {
+        Log.i("MyApp", "This is a sharePhotoButton log message.");
+        //Toast.makeText(getApplicationContext(), "It's magic!", Toast.LENGTH_SHORT)
+        //        .show();
+        Intent intent = new Intent()
+                .setType("*/*")
+                .setAction(Intent.ACTION_GET_CONTENT);
+
+        startActivityForResult(Intent.createChooser(intent, "Please select a file"), 131);
+      }
+    });
+  }
+
+  @Override
+  protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    if (requestCode == 131 && resultCode == RESULT_OK) {
+      Uri selectedfile = data.getData(); //The uri with the location of the file
+      Log.i("MyApp", "This is a onActivityResult log message.");
+
+      String endpointId = data.getStringExtra("com.google.location.nearby.apps.walkietalkie");
+      // The URI of the file selected by the user.
+      Uri uri = data.getData();
+      Payload filePayload;
+      try {
+        // Open the ParcelFileDescriptor for this URI with read access.
+        ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(uri, "r");
+        filePayload = Payload.fromFile(pfd);
+      } catch (FileNotFoundException e) {
+        Log.e("MyApp", "File not found", e);
+        return;
+      }
+      // Construct a simple message mapping the ID of the file payload to the desired filename.
+      String filenameMessage = filePayload.getId() + ":" + uri.getLastPathSegment();
+
+      // Send the filename message as a bytes payload.
+      Payload filenameBytesPayload =
+              Payload.fromBytes(filenameMessage.getBytes(StandardCharsets.UTF_8));
+
+      Nearby.getConnectionsClient(context).sendPayload(endpointId, filenameBytesPayload);
+
+      // Finally, send the file payload.
+      Nearby.getConnectionsClient(context).sendPayload(endpointId, filePayload);
+    }
+    Log.i("MyApp", "This is a onActivityResult log message outside.");
+  }
+
+  static class ReceiveFilePayloadCallback extends PayloadCallback {
+    private final SimpleArrayMap<Long, Payload> incomingFilePayloads = new SimpleArrayMap<>();
+    private final SimpleArrayMap<Long, Payload> completedFilePayloads = new SimpleArrayMap<>();
+    private final SimpleArrayMap<Long, String> filePayloadFilenames = new SimpleArrayMap<>();
+
+    @Override
+    public void onPayloadReceived(String endpointId, Payload payload) {
+      if (payload.getType() == Payload.Type.BYTES) {
+        String payloadFilenameMessage = new String(payload.asBytes(), StandardCharsets.UTF_8);
+        long payloadId = addPayloadFilename(payloadFilenameMessage);
+        processFilePayload(payloadId);
+      } else if (payload.getType() == Payload.Type.FILE) {
+        // Add this to our tracking map, so that we can retrieve the payload later.
+        incomingFilePayloads.put(payload.getId(), payload);
+      }
+    }
+
+    /**
+     * Extracts the payloadId and filename from the message and stores it in the
+     * filePayloadFilenames map. The format is payloadId:filename.
+     */
+    private long addPayloadFilename(String payloadFilenameMessage) {
+      String[] parts = payloadFilenameMessage.split(":");
+      long payloadId = Long.parseLong(parts[0]);
+      String filename = parts[1];
+      filePayloadFilenames.put(payloadId, filename);
+      return payloadId;
+    }
+
+    private void processFilePayload(long payloadId) {
+      // BYTES and FILE could be received in any order, so we call when either the BYTES or the FILE
+      // payload is completely received. The file payload is considered complete only when both have
+      // been received.
+      Payload filePayload = completedFilePayloads.get(payloadId);
+      String filename = filePayloadFilenames.get(payloadId);
+      if (filePayload != null && filename != null) {
+        completedFilePayloads.remove(payloadId);
+        filePayloadFilenames.remove(payloadId);
+
+        // Get the received file (which will be in the Downloads folder)
+        // Because of https://developer.android.com/preview/privacy/scoped-storage, we are not
+        // allowed to access filepaths from another process directly. Instead, we must open the
+        // uri using our ContentResolver.
+        Uri uri = filePayload.asFile().asUri();
+        try {
+          // Copy the file to a new location.
+          InputStream in = context.getContentResolver().openInputStream(uri);
+          copyStream(in, new FileOutputStream(new File(context.getCacheDir(), filename)));
+        } catch (IOException e) {
+          // Log the error.
+        } finally {
+          // Delete the original file.
+          context.getContentResolver().delete(uri, null, null);
+        }
+      }
+    }
+
+    @Override
+    public void onPayloadTransferUpdate(String endpointId, PayloadTransferUpdate update) {
+      if (update.getStatus() == PayloadTransferUpdate.Status.SUCCESS) {
+        long payloadId = update.getPayloadId();
+        Payload payload = incomingFilePayloads.remove(payloadId);
+        completedFilePayloads.put(payloadId, payload);
+        if (payload.getType() == Payload.Type.FILE) {
+          processFilePayload(payloadId);
+        }
+      }
+    }
+
+    /** Copies a stream from one location to another. */
+    private static void copyStream(InputStream in, OutputStream out) throws IOException {
+      try {
+        byte[] buffer = new byte[1024];
+        int read;
+        while ((read = in.read(buffer)) != -1) {
+          out.write(buffer, 0, read);
+        }
+        out.flush();
+      } finally {
+        in.close();
+        out.close();
+      }
+    }
   }
 
   @Override
