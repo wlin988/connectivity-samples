@@ -288,6 +288,8 @@ public abstract class ConnectionsActivity extends AppCompatActivity {
    */
   protected void onConnectionInitiated(Endpoint endpoint, ConnectionInfo connectionInfo) {}
 
+  protected ConnectionsClient getConnectionClient() { return mConnectionsClient; }
+
   /** Accepts a connection request. */
   protected void acceptConnection(final Endpoint endpoint) {
     mConnectionsClient
@@ -615,6 +617,7 @@ public abstract class ConnectionsActivity extends AppCompatActivity {
       }
       return false;
     }
+    // comment
 
     @Override
     public int hashCode() {

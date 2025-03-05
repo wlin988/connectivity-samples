@@ -32,15 +32,18 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewAnimationUtils;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.gms.nearby.Nearby;
 import com.google.android.gms.nearby.connection.ConnectionInfo;
+import com.google.android.gms.nearby.connection.ConnectionsClient;
 import com.google.android.gms.nearby.connection.Payload;
 import com.google.android.gms.nearby.connection.PayloadCallback;
 import com.google.android.gms.nearby.connection.PayloadTransferUpdate;
 import com.google.android.gms.nearby.connection.Strategy;
+import com.google.android.gms.tasks.OnFailureListener;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -277,6 +280,9 @@ public class MainActivity extends ConnectionsActivity {
           // Copy the file to a new location.
           InputStream in = context.getContentResolver().openInputStream(uri);
           copyStream(in, new FileOutputStream(new File(context.getCacheDir(), filename)));
+          ImageView ImageView;
+          //ImageView = (ImageView) findViewById(R.id.ImageView);
+          ImageView.setImageURI(uri);
         } catch (IOException e) {
           // Log the error.
         } finally {
@@ -312,6 +318,24 @@ public class MainActivity extends ConnectionsActivity {
         out.close();
       }
     }
+  }
+
+  /** Callbacks for payloads (bytes of data) sent from another device to us. */
+  private final ReceiveFilePayloadCallback mReceiveFilePayloadCallback =
+          new ReceiveFilePayloadCallback() {
+          };
+
+  /** Accepts a connection request. */
+  protected void acceptConnection(final Endpoint endpoint) {
+    getConnectionClient()
+            .acceptConnection(endpoint.getId(), mReceiveFilePayloadCallback)
+            .addOnFailureListener(
+                    new OnFailureListener() {
+                      @Override
+                      public void onFailure(@NonNull Exception e) {
+                        logW("acceptConnection() failed.", e);
+                      }
+                    });
   }
 
   @Override
@@ -779,7 +803,7 @@ public class MainActivity extends ConnectionsActivity {
     @Override
     public void onAnimationRepeat(Animator animator) {}
   }
-// comments
+  // comment
   /** States that the UI goes through. */
   public enum State {
     UNKNOWN,
